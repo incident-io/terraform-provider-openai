@@ -223,27 +223,17 @@ func (r *ExternalKeyResource) ImportState(ctx context.Context, req resource.Impo
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// find pages through the organization's external keys and returns the one with the given ID,
-// or nil if there is none. The API documents listing keys but not fetching one by ID.
+// find fetches the external key with the given ID, or returns nil if it no longer exists.
 func (r *ExternalKeyResource) find(ctx context.Context, id string) (*externalKey, error) {
-	query := url.Values{"limit": {"100"}}
-	for {
-		var page externalKeyList
-		if err := r.client.Get(ctx, "organization/external_keys?"+query.Encode(), nil, &page, externalKeyRequestOptions...); err != nil {
-			return nil, err
-		}
-
-		for _, key := range page.Data {
-			if key.ID == id {
-				return &key, nil
-			}
-		}
-
-		if !page.HasMore || page.LastID == "" {
+	var key *externalKey
+	err := r.client.Get(ctx, "organization/external_keys/"+url.PathEscape(id), nil, &key, externalKeyRequestOptions...)
+	if err != nil {
+		if apiErr, ok := errors.AsType[*openai.Error](err); ok && apiErr.StatusCode == http.StatusNotFound {
 			return nil, nil
 		}
-		query.Set("after", page.LastID)
+		return nil, err
 	}
+	return key, nil
 }
 
 // The generic request methods prefer a project API key when one is configured, for example
@@ -289,6 +279,7 @@ type ExternalKeyResourceModelGcp struct {
 type externalKey struct {
 	ID            string   `json:"id,omitempty"`
 	Type          string   `json:"type"`
+	Purpose       string   `json:"purpose,omitempty"`
 	Name          string   `json:"name"`
 	CreatedAt     int64    `json:"created_at,omitempty"`
 	APIProjectIDs []string `json:"api_project_ids,omitempty"`
@@ -314,16 +305,11 @@ type externalKey struct {
 	KmsKeyLocation                string `json:"kms_key_location,omitempty"`
 }
 
-type externalKeyList struct {
-	Data    []externalKey `json:"data"`
-	HasMore bool          `json:"has_more"`
-	LastID  string        `json:"last_id"`
-}
-
 func (r *ExternalKeyResource) getNewParams(ctx context.Context, data ExternalKeyResourceModel) (*externalKey, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	params := &externalKey{
-		Name: data.Name.ValueString(),
+		Purpose: "ekm",
+		Name:    data.Name.ValueString(),
 	}
 
 	// The schema's ExactlyOneOf validators guarantee exactly one block is set.

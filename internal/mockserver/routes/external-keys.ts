@@ -8,6 +8,7 @@ import * as schema from "../db-schema";
 const requestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("aws"),
+    purpose: z.literal("ekm"),
     name: z.string(),
     role_arn: z.string(),
     kms_arn: z.string(),
@@ -15,6 +16,7 @@ const requestSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("azure"),
+    purpose: z.literal("ekm"),
     name: z.string(),
     tenant_id: z.string(),
     vault_uri: z.string(),
@@ -22,6 +24,7 @@ const requestSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("gcp"),
+    purpose: z.literal("ekm"),
     name: z.string(),
     workload_identity_project_number: z.string(),
     workload_identity_pool_id: z.string(),
@@ -36,7 +39,7 @@ const requestSchema = z.discriminatedUnion("type", [
 
 function serialize(key: typeof schema.externalKeys.$inferSelect) {
   const { config, ...rest } = key;
-  return { ...rest, ...config, api_project_ids: [] };
+  return { ...rest, ...config, purpose: "ekm", api_project_ids: [] };
 }
 
 const route = new Hono();
@@ -62,7 +65,7 @@ route.get("/", async (c) => {
 });
 
 route.post("/", zValidator("json", requestSchema), async (c) => {
-  const { type, name, ...config } = c.req.valid("json");
+  const { type, name, purpose: _purpose, ...config } = c.req.valid("json");
 
   const [key] = await db
     .insert(schema.externalKeys)
@@ -70,6 +73,19 @@ route.post("/", zValidator("json", requestSchema), async (c) => {
     .returning();
   if (!key) {
     return c.json({ error: "Failed to create external key" }, 500);
+  }
+
+  return c.json(serialize(key));
+});
+
+route.get("/:key_id", async (c) => {
+  const key_id = c.req.param("key_id");
+
+  const key = await db.query.externalKeys.findFirst({
+    where: eq(schema.externalKeys.id, key_id),
+  });
+  if (!key) {
+    return c.json({ error: "External key not found" }, 404);
   }
 
   return c.json(serialize(key));
