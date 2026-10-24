@@ -1,5 +1,5 @@
 import { camelize } from "inflection";
-import { DATASOURCES, RESOURCES } from "./settings";
+import { DATASOURCES, HANDWRITTEN_RESOURCES, RESOURCES } from "./settings";
 import type { DataSource, Attribute, Resource } from "./schema";
 import { match, P } from "ts-pattern";
 import { parseArgs } from "util";
@@ -170,6 +170,13 @@ function generateTerraformAttribute({
       if (attribute.validators) {
         parts.push("Validators: []validator.Object{");
         parts.push(...attribute.validators.map((validator) => `${validator},`));
+        parts.push("},");
+      }
+      if (attribute.planModifiers) {
+        parts.push("PlanModifiers: []planmodifier.Object{");
+        parts.push(
+          ...attribute.planModifiers.map((modifier) => `${modifier},`),
+        );
         parts.push("},");
       }
       parts.push("Attributes: map[string]schema.Attribute{");
@@ -638,7 +645,17 @@ func (r *${resourceName}) Create(ctx context.Context, req resource.CreateRequest
     resp.Diagnostics.AddError("Client Error", "Unable to create, got empty response body")
     return
   }
-
+${
+  resource.api.postCreateMethod
+    ? `
+  modelInstance, diags = r.${resource.api.postCreateMethod}(ctx, data, modelInstance)
+  resp.Diagnostics.Append(diags...)
+  if resp.Diagnostics.HasError() {
+    return
+  }
+`
+    : ""
+}
   resp.Diagnostics.Append(data.Fill(ctx, *modelInstance)...)
   if resp.Diagnostics.HasError() {
     return
@@ -830,9 +847,11 @@ ${generateResourceModel({ resource })}
 
 function generateProvider({
   resources,
+  handwrittenResources,
   dataSources,
 }: {
   resources: Array<Resource>;
+  handwrittenResources: Array<string>;
   dataSources: Array<DataSource>;
 }) {
   return `
@@ -841,9 +860,9 @@ package provider
 
 func (p *OpenAIProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		${resources
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((resource) => `New${camelize(resource.name)}Resource,`)
+		${[...resources.map((resource) => resource.name), ...handwrittenResources]
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => `New${camelize(name)}Resource,`)
       .join("\n")}
 	}
 }
@@ -910,6 +929,7 @@ async function main() {
   {
     const code = generateProvider({
       resources: RESOURCES,
+      handwrittenResources: HANDWRITTEN_RESOURCES,
       dataSources: DATASOURCES,
     });
     await writeAndFormatGoFile(

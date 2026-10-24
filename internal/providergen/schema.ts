@@ -140,6 +140,10 @@ export interface BaseResourceApiStrategy {
   method?: string;
   createMethod: string;
   createRequestAttributes?: Array<string>;
+  // Resource method called with the create response before it is saved to state, for
+  // creates that need follow-up calls. It returns the model to save, or error diagnostics
+  // after cleaning up what it created.
+  postCreateMethod?: string;
   readMethod: string;
   readRequestAttributes?: Array<string>;
   readRequestParamsStruct?: string;
