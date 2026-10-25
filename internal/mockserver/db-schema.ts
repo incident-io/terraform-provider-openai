@@ -155,6 +155,7 @@ export const projects = sqliteTable("projects", {
     .notNull()
     .default("active"),
   geography: text(),
+  external_key_id: text(),
   archived_at: integer(),
   created_at: createdAtColumn(),
 });

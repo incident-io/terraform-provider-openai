@@ -40,7 +40,7 @@ const requestSchema = z.object({
 type Provider = z.infer<typeof requestSchema>["provider"];
 
 // Adds the fields OpenAI derives from the configuration.
-function withDerivedFields(provider: Provider) {
+function withDerivedFields(projectId: string, provider: Provider) {
   switch (provider.type) {
     case "aws":
       return {
@@ -54,7 +54,9 @@ function withDerivedFields(provider: Provider) {
     case "gcp":
       return {
         ...provider,
-        audience: `//iam.googleapis.com/projects/${provider.workload_identity_project_number}/locations/global/workloadIdentityPools/${provider.workload_identity_pool_id}/providers/${provider.workload_identity_provider_id}`,
+        // OpenAI presents the project ID as the token audience. See "Allowed audiences" in
+        // https://developers.openai.com/api/docs/guides/private-safety-processing
+        audience: projectId,
         region: "us-central1",
       };
     case "oci":
@@ -101,7 +103,7 @@ route.post("/", zValidator("json", requestSchema), async (c) => {
 
   const [config] = await db
     .insert(schema.externalStorage)
-    .values({ project_id, provider: withDerivedFields(provider) })
+    .values({ project_id, provider: withDerivedFields(project_id, provider) })
     .returning();
   if (!config) {
     return c.json({ error: "Failed to create external storage" }, 500);

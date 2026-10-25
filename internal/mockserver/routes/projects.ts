@@ -43,16 +43,27 @@ route.post(
       geography: z
         .enum(["US", "EU", "JP", "IN", "KR", "CA", "AU", "SG"])
         .optional(),
+      external_key_id: z.string().optional(),
     }),
   ),
   async (c) => {
-    const { name, geography } = c.req.valid("json");
+    const { name, geography, external_key_id } = c.req.valid("json");
+
+    if (external_key_id) {
+      const key = await db.query.externalKeys.findFirst({
+        where: eq(schema.externalKeys.id, external_key_id),
+      });
+      if (!key) {
+        return c.json({ error: "External key not found" }, 400);
+      }
+    }
 
     const [project] = await db
       .insert(schema.projects)
       .values({
         name,
         geography,
+        external_key_id,
       })
       .returning();
     if (!project) {
